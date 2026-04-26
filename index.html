@@ -325,10 +325,38 @@ function nerdamerToLatex(expr) {
     let latex = nerdamer(expr).toTeX();
     // Remove multiplication dots for cleaner display (e.g. 2a instead of 2·a)
     latex = latex.replace(/\\cdot /g, '');
+    // Fix quadratic formula order to standard: -b ± sqrt(b²-4ac) / 2a
+    latex = fixQuadraticOrder(latex);
     return latex;
   } catch {
     return String(expr);
   }
+}
+
+// Fix nerdamer's quadratic formula output to standard math textbook order
+// nerdamer: \frac{\sqrt{b²-4ac}-b}{2a} → \frac{-b+\sqrt{b²-4ac}}{2a}
+function fixQuadraticOrder(latex) {
+  let result = latex;
+  let sqrtPos = result.indexOf('\\sqrt{');
+  if (sqrtPos < 0) return result;
+  let isSqrtNeg = result.substring(0, sqrtPos).endsWith('-');
+  // Find closing } of sqrt{...}
+  let pos = sqrtPos + 6, depth = 1;
+  while (pos < result.length && depth > 0) {
+    if (result[pos] === '{') depth++;
+    if (result[pos] === '}') depth--;
+    pos++;
+  }
+  let sqrtPart = result.substring(sqrtPos, pos);
+  let after = result.substring(pos);
+  let bIdx = after.indexOf('-b}');
+  if (bIdx === -1) bIdx = after.indexOf('+b}');
+  if (bIdx > -1 && bIdx <= 3) {
+    let denom = after.substring(bIdx + 3);
+    let sign = isSqrtNeg ? '-' : '+';
+    result = '\\frac{-b' + sign + sqrtPart + '}' + denom;
+  }
+  return result;
 }
 
 function renderKatex(latex, el) {
@@ -576,8 +604,8 @@ function doSolve() {
           // For trig equations, nerdamer returns tons of periodic numeric solutions.
           // Filter to keep only unique solutions within [0, 2pi).
           let displaySols = cleanedSols;
-          let trigNote = '';
-          if (isTrig && cleanedSols.length > 4) {
+          const isPeriodic = isTrig && cleanedSols.length > 4;
+          if (isPeriodic) {
             const seen = new Set();
             const principal = [];
             for (const s of cleanedSols) {
@@ -594,43 +622,40 @@ function doSolve() {
             }
             principal.sort((a, b) => a - b);
             displaySols = principal.slice(0, 6);
-            if (cleanedSols.length > displaySols.length) {
-              const piExprs = displaySols.map(s => {
-                try { return decimalToPiFraction(s); } catch { return s; }
-              });
-              trigNote = `<p style="font-size:11px;color:#6b7280;margin-top:8px">` +
-                `三角方程有周期性解，以上为主值区间 [0, 2π) 内的解。` +
-                `一般解为 ` +
-                `<code>x = ${piExprs.join(', ')} + 2kπ</code>（k 为整数）</p>`;
-            }
           } else if (cleanedSols.length > 10) {
             displaySols = cleanedSols.slice(0, 10);
-            trigNote = `<p style="font-size:11px;color:#6b7280;margin-top:8px">共 ${cleanedSols.length} 个解，仅显示前 10 个</p>`;
           }
 
-          const solHtml = displaySols.map(sol => {
+          // Build solution display: x₁ = ..., x₂ = ...
+          const subscripts = ['₁','₂','₃','₄','₅','₆','₇','₈','₉','₁₀'];
+          const solHtml = displaySols.map((sol, i) => {
             let latex;
-            // For trig solutions, render as π fractions instead of ugly decimal fractions
-            if (isTrig) {
+            let prefix = solveFor + '_{' + (i+1) + '} = ';
+            if (isPeriodic) {
               let val;
               try { val = parseFloat(sol); } catch { val = NaN; }
               if (!isNaN(val)) {
-                latex = decimalToPiLatex(val);
+                const piLatex = decimalToPiLatex(val);
+                latex = prefix + piLatex + ' + 2k\\pi, \\quad k \\in \\mathbb{Z}';
               } else {
-                latex = nerdamerToLatex(sol);
+                latex = prefix + nerdamerToLatex(sol);
               }
             } else {
-              latex = nerdamerToLatex(sol);
+              latex = prefix + nerdamerToLatex(sol);
             }
             return '<div class="katex-sol" data-latex="' + escHtml(latex) + '"></div>';
           }).join('');
 
+          let extraNote = '';
+          if (!isPeriodic && cleanedSols.length > 10) {
+            extraNote = `<p style="font-size:11px;color:#6b7280;margin-top:8px">共 ${cleanedSols.length} 个解，仅显示前 10 个</p>`;
+          }
+
           resultDiv.innerHTML = `<div class="result-card success">
             <div class="result-title"><span class="icon-ok">&#10004;</span>求解结果</div>
             <div class="result-label">方程: <code>${escHtml(expr)}</code></div>
-            <div class="result-label" style="margin-top:8px">${solveFor} =</div>
             <div class="result-box">${solHtml}</div>
-            ${trigNote}
+            ${extraNote}
           </div>`;
 
           // Render KaTeX in each solution div
@@ -638,11 +663,12 @@ function doSolve() {
             renderKatex(el.getAttribute('data-latex'), el);
           });
 
-          const solTexts = displaySols.map(s => {
-            if (isTrig) {
-              try { return decimalToPiFraction(s); } catch { return s; }
+          const solTexts = displaySols.map((s, i) => {
+            const label = solveFor + subscripts[i] + '=';
+            if (isPeriodic) {
+              try { return label + decimalToPiFraction(s) + '+2kπ'; } catch { return label + s; }
             }
-            try { return nerdamer(s).text('fractions'); } catch { return s; }
+            try { return label + nerdamer(s).text('fractions'); } catch { return label + s; }
           });
           addHistory('solve', expr, solTexts.join(', '));
         }
