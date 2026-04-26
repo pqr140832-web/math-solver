@@ -416,7 +416,27 @@ function doSolve() {
       const rhs = parts[1].trim();
 
       // Build the expression: lhs - rhs = 0
-      const fullExpr = '(' + lhs + ') - (' + rhs + ')';
+      let fullExpr = '(' + lhs + ') - (' + rhs + ')';
+
+      // Add explicit * for implicit multiplication (nerdamer solve needs this)
+      // e.g. ax^2 -> a*x^2, 3x -> 3*x
+      const funcNames = ['factorial','asin','acos','atan','sinh','cosh','tanh','sqrt','sin','cos','tan','log','ln','exp','abs','ceil','floor','sign'];
+      // Use lookahead to insert * between adjacent letters: ax -> a*x (handles overlapping)
+      fullExpr = fullExpr.replace(/([a-zA-Z])(?=[a-zA-Z])/g, '$1*');
+      // Restore function names (longest first to avoid partial matches)
+      for (const fn of funcNames) {
+        const broken = fn.split('').join('*');
+        fullExpr = fullExpr.split(broken).join(fn);
+      }
+      // digit followed by letter or (
+      fullExpr = fullExpr.replace(/(\d)([a-zA-Z(])/g, '$1*$2');
+      // ) followed by letter or (
+      fullExpr = fullExpr.replace(/(\))([a-zA-Z(])/g, '$1*$2');
+      // Restore function names again (digit-letter or )-letter may have broken them)
+      for (const fn of funcNames) {
+        const broken = fn.split('').join('*');
+        fullExpr = fullExpr.split(broken).join(fn);
+      }
 
       // Substitute user-provided variable values into the expression
       let exprWithValues = fullExpr;
