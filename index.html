@@ -449,10 +449,14 @@ function doSolve() {
       let solutions;
       try {
         solutions = nerdamer.solve(exprWithValues, solveFor);
-        const solArr = solutions.text().split(',');
-        const cleanedSols = solArr.map(s => s.trim()).filter(s => s.length > 0);
+        // nerdamer returns text like "[sol1,sol2]" — strip brackets and split smartly
+        let solText = solutions.text();
+        // Remove outer [ and ]
+        solText = solText.replace(/^\[/, '').replace(/\]$/, '');
+        // Split by commas that are not inside parentheses
+        const cleanedSols = solText.split(/,(?![^(]*\))/).map(s => s.trim()).filter(s => s.length > 0);
 
-        if (cleanedSols.length === 0) {
+        if (cleanedSols.length === 0 || (cleanedSols.length === 1 && cleanedSols[0] === '')) {
           resultDiv.innerHTML = `<div class="result-card error">
             <div class="result-title"><span class="icon-err">&#9888;</span>无解</div>
             <div class="error-box">方程 ${escHtml(expr)} 没有找到 ${solveFor} 的解</div>
@@ -461,8 +465,6 @@ function doSolve() {
         } else {
           const solHtml = cleanedSols.map(sol => {
             const latex = nerdamerToLatex(sol);
-            const div = document.createElement('div');
-            div.className = 'katex-sol';
             return '<div class="katex-sol" data-latex="' + escHtml(latex) + '"></div>';
           }).join('');
 
