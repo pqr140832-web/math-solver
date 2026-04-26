@@ -329,6 +329,10 @@ function nerdamerToLatex(expr) {
     latex = fixSqrtTermOrder(latex);
     // Fix quadratic formula order to standard: -b ± sqrt(b²-4ac) / 2a
     latex = fixQuadraticOrder(latex);
+    // Clean up common LaTeX display issues
+    latex = cleanLatexDisplay(latex);
+    // Simplify large ugly fractions in LaTeX (e.g. \frac{27799997699817}{55599995399635} -> \frac{1}{2})
+    latex = simplifyLatexFractions(latex);
     return latex;
   } catch {
     return String(expr);
@@ -384,26 +388,96 @@ function fixSqrtTermOrder(latex) {
 // nerdamer: \frac{\sqrt{b²-4ac}-b}{2a} → \frac{-b+\sqrt{b²-4ac}}{2a}
 function fixQuadraticOrder(latex) {
   let result = latex;
-  let sqrtPos = result.indexOf('\\sqrt{');
-  if (sqrtPos < 0) return result;
-  let isSqrtNeg = result.substring(0, sqrtPos).endsWith('-');
-  // Find closing } of sqrt{...}
-  let pos = sqrtPos + 6, depth = 1;
+  // Find all \frac{...}{...} that contain \sqrt inside the numerator
+  let fracIdx = result.indexOf('\\frac{');
+  if (fracIdx < 0) return result;
+  
+  // Extract the full \frac{num}{den} structure
+  let pos = fracIdx + 6; // skip \frac{
+  let depth = 1;
+  let numStart = pos;
   while (pos < result.length && depth > 0) {
     if (result[pos] === '{') depth++;
     if (result[pos] === '}') depth--;
     pos++;
   }
-  let sqrtPart = result.substring(sqrtPos, pos);
-  let after = result.substring(pos);
-  let bIdx = after.indexOf('-b}');
-  if (bIdx === -1) bIdx = after.indexOf('+b}');
-  if (bIdx > -1 && bIdx <= 3) {
-    let denom = after.substring(bIdx + 3);
-    let sign = isSqrtNeg ? '-' : '+';
-    result = '\\frac{-b' + sign + sqrtPart + '}' + denom;
+  let numerator = result.substring(numStart, pos - 1);
+  
+  // Now extract denominator
+  if (result[pos] !== '{') return result;
+  let denStart = pos;
+  depth = 1;
+  pos++;
+  while (pos < result.length && depth > 0) {
+    if (result[pos] === '{') depth++;
+    if (result[pos] === '}') depth--;
+    pos++;
   }
+  let denominator = result.substring(denStart + 1, pos - 1);
+  let afterFrac = result.substring(pos);
+  
+  // Check if numerator contains \sqrt and a b term
+  let sqrtP = numerator.indexOf('\\sqrt{');
+  if (sqrtP < 0) return result;
+  
+  // Check if there's a ±b after the sqrt in the numerator
+  let sqrtEnd = sqrtP + 6;
+  depth = 1;
+  while (sqrtEnd < numerator.length && depth > 0) {
+    if (numerator[sqrtEnd] === '{') depth++;
+    if (numerator[sqrtEnd] === '}') depth--;
+    sqrtEnd++;
+  }
+  let sqrtPart = numerator.substring(sqrtP, sqrtEnd);
+  let afterSqrt = numerator.substring(sqrtEnd);
+  
+  // Look for -b or +b pattern after the sqrt
+  let bMatch = afterSqrt.match(/^[+-]?[\(]?b[\)]?$/);
+  if (!bMatch) return result;
+  
+  // Determine the sign of sqrt in the original (is it negated?)
+  let beforeSqrt = numerator.substring(0, sqrtP).trim();
+  let sqrtIsNeg = beforeSqrt.endsWith('-');
+  let sqrtIsPos = beforeSqrt.endsWith('+') || beforeSqrt === '' || beforeSqrt === '\\frac{-';
+  
+  // Determine the b term's sign
+  let bTerm = afterSqrt.trim();
+  let bSign = '+';
+  if (bTerm.startsWith('-')) bSign = '-';
+  
+  // Build standard form: -b ± sqrt(...)
+  let plusSign = (sqrtIsNeg && bSign === '-') || (sqrtIsPos && bSign === '-') ? '-' : '+';
+  let newNum = '-b' + plusSign + sqrtPart;
+  result = '\\frac{' + newNum + '}{' + denominator + '}' + afterFrac;
+  
   return result;
+}
+
+// Clean up common LaTeX display issues
+function cleanLatexDisplay(latex) {
+  let result = latex;
+  // Remove \left( and \right) when they wrap the entire numerator or denominator
+  result = result.replace(/\\frac\{\\left\(([^)]*)\\right\)\}/g, '\\frac{$1}');
+  // Fix +(-... patterns: +(-b -> -b, +(-\sqrt -> -\sqrt
+  result = result.replace(/\+\(\-/g, '-');
+  // Fix double signs: +- -> -
+  result = result.replace(/\+\-/g, '-');
+  result = result.replace(/-\+/g, '-');
+  return result;
+}
+
+// Simplify large ugly fractions in LaTeX output
+// e.g. \frac{27799997699817}{55599995399635} -> \frac{1}{2}
+function simplifyLatexFractions(latex) {
+  return latex.replace(/\\frac\{(-?\d{7,})\}\{(\d{7,})\}/g, function(match, num, den) {
+    let val = parseFloat(num) / parseFloat(den);
+    let frac = rationalApprox(val, 10000);
+    if (frac[1] <= 1000 && Math.abs(val - frac[0]/frac[1]) < 0.0001) {
+      if (frac[1] === 1) return String(frac[0]);
+      return '\\frac{' + frac[0] + '}{' + frac[1] + '}';
+    }
+    return match;
+  });
 }
 
 function renderKatex(latex, el) {
