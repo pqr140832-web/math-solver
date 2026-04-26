@@ -486,7 +486,50 @@ function doSolve() {
           </div>`;
           addHistory('solve', expr, '无解');
         } else {
-          const solHtml = cleanedSols.map(sol => {
+          // Detect trig equations by checking if the expression contains trig functions
+          const isTrig = /sin|cos|tan|asin|acos|atan/.test(exprWithValues);
+
+          // For trig equations, nerdamer returns tons of periodic numeric solutions.
+          // Filter to keep only unique solutions within a reasonable range.
+          let displaySols = cleanedSols;
+          let trigNote = '';
+          if (isTrig && cleanedSols.length > 4) {
+            // Try to extract the principal solutions (unique modulo 2*pi)
+            const seen = new Set();
+            const principal = [];
+            for (const s of cleanedSols) {
+              let val;
+              try { val = parseFloat(s); } catch { val = NaN; }
+              if (isNaN(val)) { principal.push(s); continue; }
+              // Normalize to [0, 2*pi)
+              let norm = ((val % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+              const key = Math.round(norm * 1000) / 1000;
+              if (!seen.has(key)) {
+                seen.add(key);
+                principal.push(s);
+              }
+            }
+            // Sort by numeric value, take first 6
+            principal.sort((a, b) => parseFloat(a) - parseFloat(b));
+            displaySols = principal.slice(0, 6);
+            if (cleanedSols.length > displaySols.length) {
+              trigNote = `<p style="font-size:11px;color:#6b7280;margin-top:8px">` +
+                `该三角方程有周期性解（共 ${Math.round(cleanedSols.length / principal.length)} 个周期），` +
+                `以上为主值区间 [0, 2π) 内的解。一般解为 ` +
+                `<code>x = ${displaySols.length > 0 ? displaySols.map(s => {
+                  try {
+                    let v = parseFloat(s);
+                    return (v / Math.PI).toFixed(4).replace(/0+$/, '').replace(/\.$/, '') + 'π';
+                  } catch { return s; }
+                }).join(', ') : '?'} + 2kπ</code></p>`;
+            }
+          } else if (cleanedSols.length > 10) {
+            // For non-trig equations with many solutions, just show first 10
+            displaySols = cleanedSols.slice(0, 10);
+            trigNote = `<p style="font-size:11px;color:#6b7280;margin-top:8px">共 ${cleanedSols.length} 个解，仅显示前 10 个</p>`;
+          }
+
+          const solHtml = displaySols.map(sol => {
             const latex = nerdamerToLatex(sol);
             return '<div class="katex-sol" data-latex="' + escHtml(latex) + '"></div>';
           }).join('');
@@ -496,6 +539,7 @@ function doSolve() {
             <div class="result-label">方程: <code>${escHtml(expr)}</code></div>
             <div class="result-label" style="margin-top:8px">${solveFor} =</div>
             <div class="result-box">${solHtml}</div>
+            ${trigNote}
           </div>`;
 
           // Render KaTeX in each solution div
@@ -503,7 +547,7 @@ function doSolve() {
             renderKatex(el.getAttribute('data-latex'), el);
           });
 
-          const solTexts = cleanedSols.map(s => {
+          const solTexts = displaySols.map(s => {
             try { return nerdamer(s).text('fractions'); } catch { return s; }
           });
           addHistory('solve', expr, solTexts.join(', '));
