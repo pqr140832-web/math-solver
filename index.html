@@ -487,6 +487,21 @@ function rationalApprox(val, maxDenom) {
   return [sign * bestNum, bestDen];
 }
 
+// Simplify ugly large fractions in nerdamer output (e.g. 27799997699817/55599995399635 -> 1/2)
+function simplifyUglyFractions(s) {
+  // Match patterns like (-num/denom) where num and denom are large (more than 6 digits)
+  return s.replace(/\(?(-?\d{7,})\/(\d{7,})\)?/g, function(match, num, den) {
+    let val = parseFloat(num) / parseFloat(den);
+    // Check if it's close to a simple fraction
+    let frac = rationalApprox(val, 10000);
+    if (frac[1] <= 1000 && Math.abs(val - frac[0]/frac[1]) < 0.0001) {
+      if (frac[1] === 1) return String(frac[0]);
+      return frac[0] + '/' + frac[1];
+    }
+    return match;
+  });
+}
+
 function addHistory(type, input, result) {
   history.unshift({ type, input, result, time: Date.now() });
   if (history.length > 20) history.pop();
@@ -621,7 +636,9 @@ function doSolve() {
         // Remove outer [ and ]
         solText = solText.replace(/^\[/, '').replace(/\]$/, '');
         // Split by commas that are not inside parentheses
-        const cleanedSols = solText.split(/,(?![^(]*\))/).map(s => s.trim()).filter(s => s.length > 0);
+        let cleanedSols = solText.split(/,(?![^(]*\))/).map(s => s.trim()).filter(s => s.length > 0);
+        // Simplify ugly large fractions caused by floating point noise (e.g. 27799997699817/55599995399635 -> 1/2)
+        cleanedSols = cleanedSols.map(s => simplifyUglyFractions(s));
 
         if (cleanedSols.length === 0 || (cleanedSols.length === 1 && cleanedSols[0] === '')) {
           resultDiv.innerHTML = `<div class="result-card error">
