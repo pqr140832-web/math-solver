@@ -343,6 +343,90 @@ function renderKatex(latex, el) {
   }
 }
 
+// Convert a decimal value to a nice π fraction string (e.g. "π/6", "5π/6")
+function decimalToPiFraction(val) {
+  // Try common fractions of π
+  const ratio = val / Math.PI;
+  // Common fractions to check
+  const common = [
+    [1, 6], [1, 4], [1, 3], [1, 2], [2, 3], [3, 4], [5, 6],
+    [1, 1], [7, 6], [5, 4], [4, 3], [3, 2], [5, 3], [7, 4], [11, 6],
+    [2, 1], [0, 1], [-1, 6], [-1, 4], [-1, 3], [-1, 2], [-2, 3],
+    [-3, 4], [-5, 6], [-1, 1], [-7, 6], [-5, 4], [-4, 3], [-3, 2],
+    [-5, 3], [-7, 4], [-11, 6], [-2, 1],
+  ];
+  for (const [n, d] of common) {
+    if (Math.abs(ratio - n / d) < 0.001) {
+      if (n === 0) return '0';
+      if (n === 1 && d === 1) return 'π';
+      if (n === -1 && d === 1) return '-π';
+      if (d === 1) return n + 'π';
+      if (n === 1) return 'π/' + d;
+      if (n === -1) return '-π/' + d;
+      return n + 'π/' + d;
+    }
+  }
+  // Fallback: try to find a rational approximation
+  const frac = rationalApprox(ratio, 1000);
+  if (frac) {
+    if (frac[0] === 0) return '0';
+    if (frac[1] === 1) return frac[0] + 'π';
+    if (frac[0] === 1) return 'π/' + frac[1];
+    if (frac[0] === -1) return '-π/' + frac[1];
+    return frac[0] + 'π/' + frac[1];
+  }
+  return val.toFixed(4);
+}
+
+// Convert a decimal to LaTeX π expression
+function decimalToPiLatex(val) {
+  const ratio = val / Math.PI;
+  const common = [
+    [1, 6], [1, 4], [1, 3], [1, 2], [2, 3], [3, 4], [5, 6],
+    [1, 1], [7, 6], [5, 4], [4, 3], [3, 2], [5, 3], [7, 4], [11, 6],
+    [2, 1], [0, 1], [-1, 6], [-1, 4], [-1, 3], [-1, 2], [-2, 3],
+    [-3, 4], [-5, 6], [-1, 1], [-7, 6], [-5, 4], [-4, 3], [-3, 2],
+    [-5, 3], [-7, 4], [-11, 6], [-2, 1],
+  ];
+  for (const [n, d] of common) {
+    if (Math.abs(ratio - n / d) < 0.001) {
+      if (n === 0) return '0';
+      if (d === 1 && Math.abs(n) === 1) return (n < 0 ? '-' : '') + '\\pi';
+      if (d === 1) return n + '\\pi';
+      if (Math.abs(n) === 1) return (n < 0 ? '-' : '') + '\\frac{\\pi}{' + d + '}';
+      return '\\frac{' + n + '\\pi}{' + d + '}';
+    }
+  }
+  const frac = rationalApprox(ratio, 1000);
+  if (frac) {
+    if (frac[0] === 0) return '0';
+    if (frac[1] === 1) return frac[0] + '\\pi';
+    if (Math.abs(frac[0]) === 1) return (frac[0] < 0 ? '-' : '') + '\\frac{\\pi}{' + frac[1] + '}';
+    return '\\frac{' + frac[0] + '\\pi}{' + frac[1] + '}';
+  }
+  return String(val);
+}
+
+// Simple continued fraction rational approximation
+function rationalApprox(val, maxDenom) {
+  val = Math.round(val * 10000) / 10000; // avoid floating point noise
+  let sign = val < 0 ? -1 : 1;
+  val = Math.abs(val);
+  let bestNum = 0, bestDen = 1, bestErr = val;
+  for (let d = 1; d <= maxDenom; d++) {
+    let n = Math.round(val * d);
+    let err = Math.abs(val - n / d);
+    if (err < bestErr) {
+      bestErr = err;
+      bestNum = n;
+      bestDen = d;
+    }
+    if (bestErr < 0.0001) break;
+  }
+  if (bestNum === 0) return [0, 1];
+  return [sign * bestNum, bestDen];
+}
+
 function addHistory(type, input, result) {
   history.unshift({ type, input, result, time: Date.now() });
   if (history.length > 20) history.pop();
@@ -486,51 +570,57 @@ function doSolve() {
           </div>`;
           addHistory('solve', expr, '无解');
         } else {
-          // Detect trig equations by checking if the expression contains trig functions
+          // Detect trig equations
           const isTrig = /sin|cos|tan|asin|acos|atan/.test(exprWithValues);
 
           // For trig equations, nerdamer returns tons of periodic numeric solutions.
-          // Filter to keep only unique solutions within a reasonable range.
+          // Filter to keep only unique solutions within [0, 2pi).
           let displaySols = cleanedSols;
           let trigNote = '';
           if (isTrig && cleanedSols.length > 4) {
-            // Try to extract the principal solutions (unique modulo 2*pi)
             const seen = new Set();
             const principal = [];
             for (const s of cleanedSols) {
               let val;
               try { val = parseFloat(s); } catch { val = NaN; }
               if (isNaN(val)) { principal.push(s); continue; }
-              // Normalize to [0, 2*pi)
               let norm = ((val % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
-              const key = Math.round(norm * 1000) / 1000;
+              const key = Math.round(norm * 10000) / 10000;
               if (!seen.has(key)) {
                 seen.add(key);
                 principal.push(s);
               }
             }
-            // Sort by numeric value, take first 6
             principal.sort((a, b) => parseFloat(a) - parseFloat(b));
             displaySols = principal.slice(0, 6);
             if (cleanedSols.length > displaySols.length) {
+              const piExprs = displaySols.map(s => {
+                try { return decimalToPiFraction(parseFloat(s)); } catch { return s; }
+              });
               trigNote = `<p style="font-size:11px;color:#6b7280;margin-top:8px">` +
-                `该三角方程有周期性解（共 ${Math.round(cleanedSols.length / principal.length)} 个周期），` +
-                `以上为主值区间 [0, 2π) 内的解。一般解为 ` +
-                `<code>x = ${displaySols.length > 0 ? displaySols.map(s => {
-                  try {
-                    let v = parseFloat(s);
-                    return (v / Math.PI).toFixed(4).replace(/0+$/, '').replace(/\.$/, '') + 'π';
-                  } catch { return s; }
-                }).join(', ') : '?'} + 2kπ</code></p>`;
+                `三角方程有周期性解，以上为主值区间 [0, 2π) 内的解。` +
+                `一般解为 ` +
+                `<code>x = ${piExprs.join(', ')} + 2kπ</code>（k 为整数）</p>`;
             }
           } else if (cleanedSols.length > 10) {
-            // For non-trig equations with many solutions, just show first 10
             displaySols = cleanedSols.slice(0, 10);
             trigNote = `<p style="font-size:11px;color:#6b7280;margin-top:8px">共 ${cleanedSols.length} 个解，仅显示前 10 个</p>`;
           }
 
           const solHtml = displaySols.map(sol => {
-            const latex = nerdamerToLatex(sol);
+            let latex;
+            // For trig solutions, render as π fractions instead of ugly decimal fractions
+            if (isTrig) {
+              let val;
+              try { val = parseFloat(sol); } catch { val = NaN; }
+              if (!isNaN(val)) {
+                latex = decimalToPiLatex(val);
+              } else {
+                latex = nerdamerToLatex(sol);
+              }
+            } else {
+              latex = nerdamerToLatex(sol);
+            }
             return '<div class="katex-sol" data-latex="' + escHtml(latex) + '"></div>';
           }).join('');
 
@@ -548,6 +638,9 @@ function doSolve() {
           });
 
           const solTexts = displaySols.map(s => {
+            if (isTrig) {
+              try { return decimalToPiFraction(parseFloat(s)); } catch { return s; }
+            }
             try { return nerdamer(s).text('fractions'); } catch { return s; }
           });
           addHistory('solve', expr, solTexts.join(', '));
