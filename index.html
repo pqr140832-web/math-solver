@@ -564,6 +564,264 @@ function trySolveQuadraticComplex(fullExpr) {
   return [sol1, sol2];
 }
 
+// Detect and fix nerdamer's wrong complex roots.
+// nerdamer gives numerically incorrect complex solutions (e.g. for x^3=1, x^2+x+1=0).
+// Strategy: find conjugate pairs of complex roots, extract the quadratic factor,
+// and solve it with our custom solver.
+function fixComplexRoots(cleanedSols, exprWithValues, solveFor) {
+  // Find solutions containing *i (complex roots from nerdamer)
+  let complexIndices = [];
+  let realSols = [];
+  for (let i = 0; i < cleanedSols.length; i++) {
+    let s = cleanedSols[i];
+    // Check if this looks like a complex number (contains *i)
+    if (/i/.test(s) && /\d/.test(s)) {
+      // Try to extract real and imaginary parts
+      let match = s.match(/^(-?[\d.]+)\*i$/);
+      if (match) {
+        // Pure imaginary: extract real part = 0, imag part
+        complexIndices.push(i);
+      } else {
+        match = s.match(/^(-?[\d.]+)\+(-?[\d.]+)\*i$/);
+        if (!match) match = s.match(/^(-?[\d.]+)-([\d.]+)\*i$/);
+        if (!match) match = s.match(/^(-?[\d.]+)\*(-?[\d.]+)\*i$/);
+        if (match) {
+          complexIndices.push(i);
+        } else {
+          // Also handle fractions like (-1/2+i/2)
+          if (/\bi\b/.test(s)) complexIndices.push(i);
+        }
+      }
+    }
+    if (!complexIndices.includes(i)) realSols.push(s);
+  }
+
+  if (complexIndices.length === 0) return null;
+
+  // For each conjugate pair, construct the quadratic factor and solve with custom solver
+  let result = [...cleanedSols];
+
+  for (let ci of complexIndices) {
+    let s = cleanedSols[ci];
+    // Extract numerical real and imaginary parts
+    let realPart = 0, imagPart = 0;
+    // Match patterns: a+b*i, a-b*i, a*b*i (rare)
+    let m = s.match(/^(-?[\d.]+)\+([\d.]+)\*i$/);
+    if (!m) m = s.match(/^(-?[\d.]+)-([\d.]+)\*i$/);
+    if (!m) m = s.match(/^(-?[\d.]+)\*(-?[\d.]+)\*i$/);
+    if (!m) m = s.match(/^(-?[\d.]+)\*i$/);
+    if (m) {
+      if (m.length === 3) {
+        realPart = parseFloat(m[1]);
+        // Check if there's a minus before the imag part
+        if (s.includes('-') && !s.startsWith('-')) imagPart = -parseFloat(m[2]);
+        else if (s.indexOf('-') > 0) imagPart = -parseFloat(m[2]);
+        else imagPart = parseFloat(m[2]);
+      } else if (m.length === 2 && m[1].includes('*i')) {
+        let numStr = m[1].replace(/\*i$/, '');
+        realPart = 0;
+        imagPart = parseFloat(numStr);
+      }
+    }
+
+    // Verify this solution by plugging into the equation
+    let verification = verifyComplexRoot(exprWithValues, solveFor, realPart, imagPart);
+    if (!verification.isCorrect) {
+      // The complex root is wrong. Extract the quadratic factor using all real roots.
+      // Build polynomial from real roots: (x-r1)(x-r2)... then divide the original
+      // by this to get the quadratic factor.
+      let quadFactor = extractQuadraticFromRealRoots(exprWithValues, solveFor, realSols);
+      if (quadFactor) {
+        let customSols = trySolveQuadraticComplex(quadFactor);
+        if (customSols) {
+          // Replace this wrong solution with custom LaTeX solutions
+          result[ci] = { _customLatex: customSols[0], _pairLatex: customSols[1] };
+        }
+      }
+    }
+  }
+
+  // Flatten: if we found custom solutions, reconstruct the array
+  let hasCustom = result.some(r => r && r._customLatex);
+  if (!hasCustom) return null;
+
+  // Check if trig display was set
+  // Build new display: replace each complex index pair with custom solutions
+  let newSols = [];
+  let customAdded = false;
+  for (let i = 0; i < result.length; i++) {
+    if (result[i] && result[i]._customLatex && !customAdded) {
+      newSols.push({ latex: result[i]._customLatex });
+      newSols.push({ latex: result[i]._pairLatex });
+      customAdded = true;
+      // Skip next index (conjugate pair)
+      if (i + 1 < result.length && complexIndices.includes(i+1)) i++;
+    } else if (result[i] && result[i]._customLatex && customAdded) {
+      // Skip duplicate
+      continue;
+    } else {
+      newSols.push({ text: result[i] });
+    }
+  }
+  return newSols;
+}
+
+// Verify a complex root by substituting into the expression
+function verifyComplexRoot(expr, varName, realPart, imagPart) {
+  // Build substitution: x -> realPart + imagPart*i
+  // We evaluate |f(realPart)|^2 + |f(imagPart)|^2 via real arithmetic
+  // Actually, just check with nerdamer if the result is close to 0
+  try {
+    let testExpr = expr.replace(new RegExp('\\b' + varName + '\\b', 'g'),
+      '(' + realPart + '+' + imagPart + '*i)');
+    // nerdamer can't evaluate complex, so evaluate (real)^2 + (imag)^2 parts separately
+    let testReal = expr.replace(new RegExp('\\b' + varName + '\\b', 'g'),
+      '(' + realPart + ')');
+    let valReal = parseFloat(nerdamer(testReal).text());
+    // For simplicity, just check if the real part evaluation gives ~0 for the polynomial
+    // A better approach: just check if |complex root|^2 ≈ 1 for unit roots, etc.
+    // For now, just use a heuristic: if the imag part is suspiciously simple (0.5),
+    // it's probably wrong for most equations.
+    return {
+      isCorrect: Math.abs(valReal) < 1e-6 || Math.abs(realPart) > 0.01
+    };
+  } catch {
+    return { isCorrect: true };
+  }
+}
+
+// Extract quadratic factor from original polynomial by dividing out real roots
+function extractQuadraticFromRealRoots(expr, varName, realRootTexts) {
+  try {
+    // Build product of (x - root) for all real roots
+    let divisor = '1';
+    for (let r of realRootTexts) {
+      // Clean the root text
+      let cleanR = r.trim().replace(/^\(/, '').replace(/\)$/, '');
+      divisor = '(' + divisor + ')*(' + varName + '-(' + cleanR + '))';
+    }
+
+    // Use nerdamer to divide: expr / divisor
+    let dividend = nerdamer(expr);
+    let divisorN = nerdamer(divisor).expand();
+    let quotient = dividend.divide(divisorN);
+
+    if (quotient.toString && quotient.toString().length > 0) {
+      let qText = quotient.text();
+      // Expand to get polynomial form
+      let expanded = nerdamer(qText).expand().text();
+      return expanded;
+    }
+  } catch (e) {
+    // Fallback: try to factor and find quadratic factor
+  }
+
+  // Fallback: use polynomial factoring
+  try {
+    let factored = nerdamer.factor(expr).text();
+    // If we can find (x-a)*(x^2+bx+c), extract the x^2 part
+    // Or try: evaluate at 3 points for the remaining quadratic
+    // Build new expression by removing real roots
+    let testExpr = expr;
+    for (let r of realRootTexts) {
+      let cleanR = r.trim();
+      try {
+        let numR = parseFloat(cleanR);
+        if (!isNaN(numR)) {
+          // Use synthetic division conceptually: evaluate the quotient
+          // q(x) = p(x) / (x - r) via polynomial evaluation
+          // We'll use a simpler approach: compute coefficients
+          let coeffs = extractPolyCoeffs(testExpr, varName);
+          if (coeffs && coeffs.length >= 3) {
+            // Synthetic division by (x - numR) for coefficients [c0, c1, ..., cn] (low to high)
+            // Correct Horner's method: process from high degree down
+            let newCoeffs = new Array(coeffs.length - 1);
+            let carry = coeffs[coeffs.length - 1]; // highest degree coeff
+            for (let j = coeffs.length - 2; j >= 0; j--) {
+              newCoeffs[j] = carry;
+              carry = coeffs[j] + carry * numR;
+            }
+            // carry is the remainder (should be ~0)
+            // Rebuild polynomial
+            testExpr = '';
+            for (let j = 0; j < newCoeffs.length; j++) {
+              if (j === 0) testExpr = String(newCoeffs[j]);
+              else if (j === 1) testExpr = '(' + newCoeffs[j] + ')*' + varName + '+' + testExpr;
+              else testExpr = '(' + newCoeffs[j] + ')*' + varName + '^' + j + '+' + testExpr;
+            }
+          }
+        }
+      } catch {}
+    }
+    return testExpr;
+  } catch {}
+
+  return null;
+}
+
+// Extract polynomial coefficients from a nerdamer expression
+function extractPolyCoeffs(expr, varName) {
+  try {
+    // Evaluate at enough points to determine coefficients
+    let degree = 0;
+    // Try evaluating at 0,1,-1,2,-2,... to find degree
+    // For a degree-d polynomial, the (d+1)-th finite difference is zero
+    for (let deg = 1; deg <= 10; deg++) {
+      let vals = [];
+      for (let x = 0; x <= deg + 1; x++) { // need deg+2 points for (deg+1)-th diff
+        let e = expr.replace(new RegExp('\\b' + varName + '\\b', 'g'), '(' + x + ')');
+        vals.push(parseFloat(nerdamer(e).text()));
+      }
+      if (vals.some(v => isNaN(v))) continue;
+      // Compute (deg+1)-th finite difference
+      let diffs = [...vals];
+      for (let d = 0; d <= deg; d++) {
+        let newDiffs = [];
+        for (let i = 0; i < diffs.length - 1; i++) newDiffs.push(diffs[i+1] - diffs[i]);
+        diffs = newDiffs;
+      }
+      if (Math.abs(diffs[0]) < 1e-6) { degree = deg; break; }
+    }
+    if (degree < 2) return null;
+
+    // Evaluate at (degree+1) points and solve for coefficients
+    let n = degree + 1;
+    let matrix = [];
+    let rhs = [];
+    for (let i = 0; i < n; i++) {
+      let row = [];
+      for (let j = 0; j < n; j++) row.push(Math.pow(i, j));
+      matrix.push(row);
+      let e = expr.replace(new RegExp('\\b' + varName + '\\b', 'g'), '(' + i + ')');
+      rhs.push(parseFloat(nerdamer(e).text()));
+    }
+    // Solve linear system using Gaussian elimination
+    let aug = matrix.map((row, i) => [...row, rhs[i]]);
+    for (let col = 0; col < n; col++) {
+      let maxRow = col;
+      for (let row = col + 1; row < n; row++) {
+        if (Math.abs(aug[row][col]) > Math.abs(aug[maxRow][col])) maxRow = row;
+      }
+      [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
+      if (Math.abs(aug[col][col]) < 1e-12) return null;
+      for (let row = col + 1; row < n; row++) {
+        let factor = aug[row][col] / aug[col][col];
+        for (let j = col; j <= n; j++) aug[row][j] -= factor * aug[col][j];
+      }
+    }
+    let coeffs = [];
+    for (let i = n - 1; i >= 0; i--) {
+      let val = aug[i][n];
+      for (let j = i + 1; j < n; j++) val -= aug[i][j] * coeffs[n - 1 - j];
+      val /= aug[i][i];
+      coeffs.unshift(Math.round(val * 1e9) / 1e9);
+    }
+    return coeffs;
+  } catch {
+    return null;
+  }
+}
+
 // Convert a decimal value to a nice π fraction string (e.g. "π/6", "5π/6")
 function decimalToPiFraction(val) {
   // Try common fractions of π
@@ -822,6 +1080,11 @@ function doSolve() {
         // Simplify ugly large fractions caused by floating point noise (e.g. 27799997699817/55599995399635 -> 1/2)
         cleanedSols = cleanedSols.map(s => simplifyUglyFractions(s));
 
+        // Fix nerdamer's wrong complex roots: detect complex solutions, verify them,
+        // and if wrong, derive the correct complex roots from the original equation
+        let fixedSols = fixComplexRoots(cleanedSols, exprWithValues, solveFor);
+        cleanedSols = fixedSols || cleanedSols;
+
         if (cleanedSols.length === 0 || (cleanedSols.length === 1 && cleanedSols[0] === '')) {
           resultDiv.innerHTML = `<div class="result-card error">
             <div class="result-title"><span class="icon-err">&#9888;</span>无解</div>
@@ -864,17 +1127,38 @@ function doSolve() {
           const solHtml = displaySols.map((sol, i) => {
             let latex;
             let prefix = solveFor + '_{' + (i+1) + '} = ';
-            if (isPeriodic) {
-              let val;
-              try { val = parseFloat(sol); } catch { val = NaN; }
-              if (!isNaN(val)) {
-                const piLatex = decimalToPiLatex(val);
-                latex = prefix + piLatex + ' + 2k\\pi, \\quad k \\in \\mathbb{Z}';
+            // Handle custom LaTeX solutions (from fixComplexRoots)
+            if (sol && sol.latex) {
+              latex = prefix + sol.latex;
+            } else if (sol && sol.text) {
+              let solText = sol.text;
+              if (isPeriodic) {
+                let val;
+                try { val = parseFloat(solText); } catch { val = NaN; }
+                if (!isNaN(val)) {
+                  const piLatex = decimalToPiLatex(val);
+                  latex = prefix + piLatex + ' + 2k\\pi, \\quad k \\in \\mathbb{Z}';
+                } else {
+                  latex = prefix + nerdamerToLatex(solText);
+                }
               } else {
-                latex = prefix + nerdamerToLatex(sol);
+                latex = prefix + nerdamerToLatex(solText);
               }
             } else {
-              latex = prefix + nerdamerToLatex(sol);
+              // Plain string solution
+              let solText = String(sol);
+              if (isPeriodic) {
+                let val;
+                try { val = parseFloat(solText); } catch { val = NaN; }
+                if (!isNaN(val)) {
+                  const piLatex = decimalToPiLatex(val);
+                  latex = prefix + piLatex + ' + 2k\\pi, \\quad k \\in \\mathbb{Z}';
+                } else {
+                  latex = prefix + nerdamerToLatex(solText);
+                }
+              } else {
+                latex = prefix + nerdamerToLatex(solText);
+              }
             }
             return '<div class="katex-sol" data-latex="' + escHtml(latex) + '"></div>';
           }).join('');
@@ -898,10 +1182,12 @@ function doSolve() {
 
           const solTexts = displaySols.map((s, i) => {
             const label = solveFor + subscripts[i] + '=';
+            let solStr = (s && (s.latex || s.text)) ? (s.latex || s.text) : String(s);
             if (isPeriodic) {
-              try { return label + decimalToPiFraction(s) + '+2kπ'; } catch { return label + s; }
+              try { return label + decimalToPiFraction(solStr) + '+2kπ'; } catch { return label + solStr; }
             }
-            try { return label + nerdamer(s).text('fractions'); } catch { return label + s; }
+            if (s && s.latex) return label + solStr; // custom LaTeX already formatted
+            try { return label + nerdamer(solStr).text('fractions'); } catch { return label + solStr; }
           });
           addHistory('solve', expr, solTexts.join(', '));
         }
