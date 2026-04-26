@@ -337,32 +337,47 @@ function nerdamerToLatex(expr) {
 
 // Fix terms inside \sqrt{} so positive terms come first: -4ac+b^2 -> b^2-4ac
 function fixSqrtTermOrder(latex) {
-  return latex.replace(/\\sqrt\{([^{}]+)\}/g, function(match, inner) {
+  let result = latex;
+  let searchFrom = 0;
+  while (true) {
+    let sqrtPos = result.indexOf('\\sqrt{', searchFrom);
+    if (sqrtPos < 0) break;
+    // Find matching closing } using brace depth
+    let pos = sqrtPos + 6, depth = 1;
+    while (pos < result.length && depth > 0) {
+      if (result[pos] === '{') depth++;
+      if (result[pos] === '}') depth--;
+      pos++;
+    }
+    let inner = result.substring(sqrtPos + 6, pos - 1);
     // Only fix if it starts with a minus sign
-    if (!/^-/.test(inner.trim())) return match;
-    // Split into terms (respecting nested braces like {x}^2)
-    let terms = [];
-    let current = '';
-    let depth = 0;
-    for (let i = 0; i < inner.length; i++) {
-      let ch = inner[i];
-      if (ch === '{') depth++;
-      if (ch === '}') depth--;
-      if (depth === 0 && (ch === '+' || ch === '-')) {
-        if (current.length > 0) terms.push(current);
-        current = ch;
-      } else {
-        current += ch;
+    if (/^-/.test(inner.trim())) {
+      // Split into terms respecting nested braces
+      let terms = [];
+      let current = '';
+      let d = 0;
+      for (let i = 0; i < inner.length; i++) {
+        let ch = inner[i];
+        if (ch === '{') d++;
+        if (ch === '}') d--;
+        if (d === 0 && (ch === '+' || ch === '-')) {
+          if (current.length > 0) terms.push(current);
+          current = ch;
+        } else {
+          current += ch;
+        }
+      }
+      if (current.length > 0) terms.push(current);
+      let positive = terms.filter(t => !t.startsWith('-'));
+      let negative = terms.filter(t => t.startsWith('-'));
+      if (positive.length > 0 && negative.length > 0) {
+        let reordered = [...positive, ...negative].join('');
+        result = result.substring(0, sqrtPos) + '\\sqrt{' + reordered + '}' + result.substring(pos);
       }
     }
-    if (current.length > 0) terms.push(current);
-    // Separate positive and negative terms
-    let positive = terms.filter(t => !t.startsWith('-'));
-    let negative = terms.filter(t => t.startsWith('-'));
-    // Reorder: positive first, then negative
-    let reordered = [...positive, ...negative].join('');
-    return '\\sqrt{' + reordered + '}';
-  });
+    searchFrom = pos;
+  }
+  return result;
 }
 
 // Fix nerdamer's quadratic formula output to standard math textbook order
