@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数学求解器 - Math Solver</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/nerdamer@latest/nerdamer.core.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/nerdamer@latest/Algebra.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/nerdamer@latest/Calculus.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/nerdamer@latest/Solve.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #fff7ed, #fef3c7, #fefce8);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    color: #1f2937;
+  }
+  header {
+    position: sticky; top: 0; z-index: 40;
+    background: rgba(255,255,255,0.7);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid #fde68a;
+    padding: 12px 16px;
+  }
+  .header-inner {
+    max-width: 720px; margin: 0 auto;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .logo {
+    width: 36px; height: 36px; border-radius: 12px;
+    background: linear-gradient(135deg, #f97316, #f59e0b);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(249,115,22,0.3);
+    font-size: 18px; color: white;
+  }
+  .header-text h1 { font-size: 18px; font-weight: 700; line-height: 1.2; }
+  .header-text p { font-size: 11px; color: #9ca3af; }
+  main {
+    flex: 1; max-width: 720px; width: 100%;
+    margin: 0 auto; padding: 24px 16px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .tabs {
+    display: flex; background: rgba(255,255,255,0.8);
+    border: 1px solid #fde68a; border-radius: 12px;
+    padding: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .tab {
+    flex: 1; padding: 10px 16px; border: none; border-radius: 8px;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    background: transparent; color: #6b7280;
+    transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .tab.active {
+    background: linear-gradient(135deg, #f97316, #f59e0b);
+    color: white; box-shadow: 0 2px 8px rgba(249,115,22,0.3);
+  }
+  .card {
+    background: rgba(255,255,255,0.8); border: 1px solid #fde68a;
+    border-radius: 12px; padding: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .card label {
+    display: block; font-size: 13px; font-weight: 500;
+    color: #4b5563; margin-bottom: 6px;
+  }
+  .card textarea {
+    width: 100%; border: 1px solid #fde68a; border-radius: 8px;
+    padding: 12px; font-size: 15px; font-family: 'Courier New', monospace;
+    background: rgba(255,251,235,0.3); resize: none; outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .card textarea:focus {
+    border-color: #fb923c;
+    box-shadow: 0 0 0 3px rgba(251,146,60,0.15);
+  }
+  .card textarea::placeholder { color: #d1d5db; }
+  .hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+  .var-input { min-height: 44px !important; }
+  .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+  .btn {
+    flex: 1; padding: 10px 20px; border: none; border-radius: 8px;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    transition: all 0.2s; display: flex; align-items: center;
+    justify-content: center; gap: 6px;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, #f97316, #f59e0b);
+    color: white; box-shadow: 0 2px 8px rgba(249,115,22,0.3);
+  }
+  .btn-primary:hover { filter: brightness(1.05); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .btn-secondary {
+    background: white; border: 1px solid #fde68a; color: #b45309;
+  }
+  .btn-secondary:hover { background: #fffbeb; }
+  .result-card {
+    border-radius: 12px; padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    animation: slideIn 0.3s ease;
+  }
+  .result-card.success { background: rgba(240,253,244,0.8); border: 1px solid #bbf7d0; }
+  .result-card.error { background: rgba(254,242,242,0.8); border: 1px solid #fecaca; }
+  .result-title { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 12px; }
+  .result-title .icon-ok { color: #16a34a; }
+  .result-title .icon-err { color: #dc2626; }
+  .result-label { font-size: 13px; color: #6b7280; margin-bottom: 4px; }
+  .result-label code { font-family: 'Courier New', monospace; font-weight: 500; }
+  .result-box {
+    background: white; border-radius: 8px; padding: 16px;
+    border: 1px solid #bbf7d0; overflow-x: auto;
+  }
+  .result-box .katex-display { margin: 8px 0; }
+  .result-box .katex { font-size: 1.2em; }
+  .error-box {
+    background: rgba(254,226,226,0.5); border-radius: 8px;
+    padding: 12px; font-size: 13px; color: #b91c1c;
+  }
+  .examples { margin-top: 16px; }
+  .examples-title {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; color: #9ca3af; margin-bottom: 8px;
+  }
+  .examples-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .example-btn {
+    padding: 4px 12px; font-size: 12px;
+    font-family: 'Courier New', monospace;
+    background: white; border: 1px solid #fde68a;
+    border-radius: 20px; color: #b45309; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .example-btn:hover { background: #fffbeb; border-color: #fbbf24; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  footer {
+    margin-top: auto; border-top: 1px solid #fde68a;
+    background: rgba(255,255,255,0.5); backdrop-filter: blur(8px);
+    padding: 16px; text-align: center; font-size: 12px; color: #9ca3af;
+  }
+  .loading-spinner {
+    display: inline-block; width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white; border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .history { margin-top: 20px; }
+  .history-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .history-header h3 { font-size: 13px; font-weight: 600; color: #6b7280; }
+  .history-clear {
+    font-size: 12px; color: #9ca3af; border: none; background: none;
+    cursor: pointer; padding: 4px 8px;
+  }
+  .history-clear:hover { color: #ef4444; }
+  .history-list {
+    max-height: 260px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .history-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px; background: rgba(255,255,255,0.7);
+    border: 1px solid #fde68a; border-radius: 8px;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .history-item:hover { background: rgba(255,251,235,0.5); }
+  .history-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0;
+  }
+  .history-icon.solve { background: #ffedd5; }
+  .history-icon.calc { background: #fef3c7; }
+  .history-body { flex: 1; min-width: 0; }
+  .history-input { font-size: 13px; font-family: 'Courier New', monospace; color: #374151;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .history-result { font-size: 11px; color: #9ca3af;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .history-time { font-size: 11px; color: #d1d5db; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">&#9883;</div>
+    <div class="header-text">
+      <h1>数学求解器</h1>
+      <p>Math Solver - Equation & Expression</p>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('solve')">&#10024; 方程求解</button>
+    <button class="tab" onclick="switchTab('calc')">&#9881; 表达式计算</button>
+  </div>
+
+  <!-- Solve Tab -->
+  <div id="tab-solve" class="tab-content active">
+    <div class="card">
+      <label for="solve-expr">输入方程</label>
+      <textarea id="solve-expr" rows="3" placeholder="例如: x^2 - 4 = 0 或 ax^2 + bx + c = 0"></textarea>
+      <p class="hint">支持 x^2 表示 x^2，使用 = 连接等式两边。按 Ctrl+Enter 快速求解。</p>
+
+      <label for="solve-vars" style="margin-top:16px">参数值（可选）</label>
+      <textarea id="solve-vars" class="var-input" rows="1" placeholder="例如: a=1, b=-5, c=6"></textarea>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="solve-btn" onclick="doSolve()">&#10148; 求解</button>
+        <button class="btn btn-secondary" onclick="clearSolve()">&#8634;</button>
+      </div>
+    </div>
+
+    <div id="solve-result"></div>
+
+    <div class="examples">
+      <div class="examples-title">&#128214; 试试这些例子:</div>
+      <div class="examples-list">
+        <button class="example-btn" onclick="setSolve('x^2 - 4 = 0')">x^2 - 4 = 0</button>
+        <button class="example-btn" onclick="setSolve('ax^2 + bx + c = 0')">ax^2 + bx + c = 0</button>
+        <button class="example-btn" onclick="setSolve('sin(x) = 0.5')">sin(x) = 0.5</button>
+        <button class="example-btn" onclick="setSolve('2x + 3 = 7')">2x + 3 = 7</button>
+        <button class="example-btn" onclick="setSolve('e^x = 10')">e^x = 10</button>
+        <button class="example-btn" onclick="setSolve('x^3 - 6x^2 + 11x - 6 = 0')">x^3 - 6x^2 + 11x - 6 = 0</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calculate Tab -->
+  <div id="tab-calc" class="tab-content">
+    <div class="card">
+      <label for="calc-expr">输入表达式</label>
+      <textarea id="calc-expr" rows="3" placeholder="例如: (a+b)^2 或 sin(pi/6) 或 2^10"></textarea>
+      <p class="hint">支持代数化简、三角函数、对数等。按 Ctrl+Enter 快速计算。</p>
+
+      <label for="calc-vars" style="margin-top:16px">变量赋值（可选）</label>
+      <textarea id="calc-vars" class="var-input" rows="1" placeholder="例如: a=2, b=3"></textarea>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="calc-btn" onclick="doCalc()">&#10148; 计算</button>
+        <button class="btn btn-secondary" onclick="clearCalc()">&#8634;</button>
+      </div>
+    </div>
+
+    <div id="calc-result"></div>
+
+    <div class="examples">
+      <div class="examples-title">&#128214; 试试这些例子:</div>
+      <div class="examples-list">
+        <button class="example-btn" onclick="setCalc('(a+b)^2')">(a+b)^2</button>
+        <button class="example-btn" onclick="setCalc('2^10')">2^10</button>
+        <button class="example-btn" onclick="setCalc('sin(pi/6)')">sin(pi/6)</button>
+        <button class="example-btn" onclick="setCalc('cos(pi/3)')">cos(pi/3)</button>
+        <button class="example-btn" onclick="setCalc('sqrt(2)')">sqrt(2)</button>
+        <button class="example-btn" onclick="setCalc('factor(x^2 - 9)')">factor(x^2 - 9)</button>
+        <button class="example-btn" onclick="setCalc('diff(x^3, x)')">diff(x^3, x)</button>
+        <button class="example-btn" onclick="setCalc('int(x^2, x)')">int(x^2, x)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div id="history-section" class="history" style="display:none">
+    <div class="history-header">
+      <h3>历史记录</h3>
+      <button class="history-clear" onclick="clearHistory()">清除</button>
+    </div>
+    <div class="history-list" id="history-list"></div>
+  </div>
+</main>
+
+<footer>数学求解器 — Powered by nerdamer.js & KaTeX</footer>
+
+<script>
+let history = [];
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', (tab === 'solve' && i === 0) || (tab === 'calc' && i === 1));
+  });
+  document.getElementById('tab-solve').classList.toggle('active', tab === 'solve');
+  document.getElementById('tab-calc').classList.toggle('active', tab === 'calc');
+}
+
+function setSolve(expr) { document.getElementById('solve-expr').value = expr; }
+function setCalc(expr) { document.getElementById('calc-expr').value = expr; }
+
+function clearSolve() {
+  document.getElementById('solve-expr').value = '';
+  document.getElementById('solve-vars').value = '';
+  document.getElementById('solve-result').innerHTML = '';
+}
+function clearCalc() {
+  document.getElementById('calc-expr').value = '';
+  document.getElementById('calc-vars').value = '';
+  document.getElementById('calc-result').innerHTML = '';
+}
+
+function parseVars(str) {
+  const vars = {};
+  if (!str.trim()) return vars;
+  str.split(',').forEach(p => {
+    const [k, v] = p.split('=').map(s => s.trim());
+    if (k && v) vars[k] = v;
+  });
+  return vars;
+}
+
+function nerdamerToLatex(expr) {
+  try {
+    return nerdamer(expr).toTeX();
+  } catch {
+    return String(expr);
+  }
+}
+
+function renderKatex(latex, el) {
+  if (typeof katex !== 'undefined') {
+    try {
+      katex.render(latex, el, { displayMode: true, throwOnError: false, trust: true });
+    } catch {
+      el.textContent = latex;
+    }
+  } else {
+    el.textContent = latex;
+  }
+}
+
+function addHistory(type, input, result) {
+  history.unshift({ type, input, result, time: Date.now() });
+  if (history.length > 20) history.pop();
+  renderHistory();
+}
+
+function renderHistory() {
+  const section = document.getElementById('history-section');
+  const list = document.getElementById('history-list');
+  if (history.length === 0) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  list.innerHTML = history.map(h => `
+    <div class="history-item" onclick="${h.type === 'solve' ? 'setSolve' : 'setCalc'}('${h.input.replace(/'/g, "\\'")}')">
+      <div class="history-icon ${h.type === 'solve' ? 'solve' : 'calc'}">
+        ${h.type === 'solve' ? '&#10024;' : '&#9881;'}
+      </div>
+      <div class="history-body">
+        <div class="history-input">${escHtml(h.input)}</div>
+        <div class="history-result">= ${escHtml(h.result)}</div>
+      </div>
+      <div class="history-time">${new Date(h.time).toLocaleTimeString()}</div>
+    </div>
+  `).join('');
+}
+
+function clearHistory() {
+  history = [];
+  renderHistory();
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function preprocessExpr(expr) {
+  let result = expr;
+  // Already compatible with nerdamer syntax mostly
+  return result;
+}
+
+function setLoading(btnId, loading) {
+  const btn = document.getElementById(btnId);
+  if (loading) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> 计算中...';
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = '&#10148; ' + (btnId === 'solve-btn' ? '求解' : '计算');
+  }
+}
+
+function doSolve() {
+  const expr = document.getElementById('solve-expr').value.trim();
+  const varsStr = document.getElementById('solve-vars').value.trim();
+  const resultDiv = document.getElementById('solve-result');
+
+  if (!expr) { resultDiv.innerHTML = '<div class="result-card error"><div class="result-title"><span class="icon-err">&#9888;</span>请输入方程</div></div>'; return; }
+
+  setLoading('solve-btn', true);
+
+  setTimeout(() => {
+    try {
+      let equation = expr;
+      let solveFor = 'x';
+      let userVars = parseVars(varsStr);
+
+      // Normalize: if no = sign, treat as = 0
+      if (!equation.includes('=')) {
+        equation = equation + ' = 0';
+      }
+
+      const parts = equation.split('=');
+      const lhs = parts[0].trim();
+      const rhs = parts[1].trim();
+
+      // Build the expression: lhs - rhs = 0
+      const fullExpr = '(' + lhs + ') - (' + rhs + ')';
+
+      // Substitute user-provided variable values into the expression
+      let exprWithValues = fullExpr;
+      for (const [k, v] of Object.entries(userVars)) {
+        const re = new RegExp('\\b' + k + '\\b', 'g');
+        exprWithValues = exprWithValues.replace(re, '(' + v + ')');
+      }
+
+      // Try to find which variable to solve for
+      const noNums = exprWithValues.replace(/[\d\s\+\-\*\/\(\)\.\^]+/g, '');
+      const possibleVars = [...new Set(noNums.split(''))].filter(c => /[a-zA-Z]/.test(c));
+      // Filter out common function names
+      const funcLetters = ['s','i','n','c','o','t','a','l','g','e','p','q','r','b','f'];
+      // Find single-letter variables that aren't part of function names
+      const remaining = possibleVars.filter(v => {
+        const funcNames = ['sin','cos','tan','sqrt','log','exp','asin','acos','atan','abs','pi','e'];
+        return !funcNames.some(fn => fn.includes(v) && funcNames.includes(v));
+      });
+
+      if (remaining.length > 0) {
+        // Prefer x, y, z
+        const preferred = ['x','y','z','t','n','m','a','b','c','k'];
+        for (const p of preferred) {
+          if (remaining.includes(p)) { solveFor = p; break; }
+        }
+        if (!remaining.includes(solveFor)) solveFor = remaining[0];
+      }
+
+      // Use nerdamer to solve
+      let solutions;
+      try {
+        solutions = nerdamer.solve(exprWithValues, solveFor);
+        const solArr = solutions.text().split(',');
+        const cleanedSols = solArr.map(s => s.trim()).filter(s => s.length > 0);
+
+        if (cleanedSols.length === 0) {
+          resultDiv.innerHTML = `<div class="result-card error">
+            <div class="result-title"><span class="icon-err">&#9888;</span>无解</div>
+            <div class="error-box">方程 ${escHtml(expr)} 没有找到 ${solveFor} 的解</div>
+          </div>`;
+          addHistory('solve', expr, '无解');
+        } else {
+          const solHtml = cleanedSols.map(sol => {
+            const latex = nerdamerToLatex(sol);
+            const div = document.createElement('div');
+            div.className = 'katex-sol';
+            return '<div class="katex-sol" data-latex="' + escHtml(latex) + '"></div>';
+          }).join('');
+
+          resultDiv.innerHTML = `<div class="result-card success">
+            <div class="result-title"><span class="icon-ok">&#10004;</span>求解结果</div>
+            <div class="result-label">方程: <code>${escHtml(expr)}</code></div>
+            <div class="result-label" style="margin-top:8px">${solveFor} =</div>
+            <div class="result-box">${solHtml}</div>
+          </div>`;
+
+          // Render KaTeX in each solution div
+          resultDiv.querySelectorAll('.katex-sol').forEach(el => {
+            renderKatex(el.getAttribute('data-latex'), el);
+          });
+
+          const solTexts = cleanedSols.map(s => {
+            try { return nerdamer(s).text('fractions'); } catch { return s; }
+          });
+          addHistory('solve', expr, solTexts.join(', '));
+        }
+      } catch (solveErr) {
+        resultDiv.innerHTML = `<div class="result-card error">
+          <div class="result-title"><span class="icon-err">&#9888;</span>求解失败</div>
+          <div class="error-box">${escHtml(String(solveErr))}</div>
+          <div class="error-box" style="margin-top:8px;font-size:11px;color:#6b7280">
+            提示：对于复杂的含参数方程，可能需要提供参数值才能求解。
+          </div>
+        </div>`;
+        addHistory('solve', expr, '失败');
+      }
+    } catch (err) {
+      resultDiv.innerHTML = `<div class="result-card error">
+        <div class="result-title"><span class="icon-err">&#9888;</span>求解失败</div>
+        <div class="error-box">${escHtml(String(err))}</div>
+      </div>`;
+      addHistory('solve', expr, '失败');
+    }
+    setLoading('solve-btn', false);
+  }, 50);
+}
+
+function doCalc() {
+  const expr = document.getElementById('calc-expr').value.trim();
+  const varsStr = document.getElementById('calc-vars').value.trim();
+  const resultDiv = document.getElementById('calc-result');
+
+  if (!expr) { resultDiv.innerHTML = '<div class="result-card error"><div class="result-title"><span class="icon-err">&#9888;</span>请输入表达式</div></div>'; return; }
+
+  setLoading('calc-btn', true);
+
+  setTimeout(() => {
+    try {
+      let userVars = parseVars(varsStr);
+      let calcExpr = expr;
+
+      // Handle special commands
+      const factorMatch = calcExpr.match(/^factor\((.+)\)$/i);
+      const diffMatch = calcExpr.match(/^diff\((.+),\s*(\w+)\)$/i);
+      const intMatch = calcExpr.match(/^int\((.+),\s*(\w+)\)$/i);
+      const expandMatch = calcExpr.match(/^expand\((.+)\)$/i);
+
+      let displayExpr = calcExpr;
+      let result;
+      let resultLatex;
+      let resultText;
+
+      if (factorMatch) {
+        const inner = factorMatch[1];
+        let processed = inner;
+        for (const [k, v] of Object.entries(userVars)) {
+          const re = new RegExp('\\b' + k + '\\b', 'g');
+          processed = processed.replace(re, '(' + v + ')');
+        }
+        result = nerdamer.factor(processed);
+        displayExpr = 'factor(' + inner + ')';
+      } else if (diffMatch) {
+        const inner = diffMatch[1];
+        const varName = diffMatch[2];
+        let processed = inner;
+        for (const [k, v] of Object.entries(userVars)) {
+          const re = new RegExp('\\b' + k + '\\b', 'g');
+          processed = processed.replace(re, '(' + v + ')');
+        }
+        result = nerdamer.diff(processed, varName);
+        displayExpr = 'd/d' + varName + ' (' + inner + ')';
+      } else if (intMatch) {
+        const inner = intMatch[1];
+        const varName = intMatch[2];
+        let processed = inner;
+        for (const [k, v] of Object.entries(userVars)) {
+          const re = new RegExp('\\b' + k + '\\b', 'g');
+          processed = processed.replace(re, '(' + v + ')');
+        }
+        result = nerdamer.integrate(processed, varName);
+        displayExpr = '∫ (' + inner + ') d' + varName;
+      } else if (expandMatch) {
+        const inner = expandMatch[1];
+        let processed = inner;
+        for (const [k, v] of Object.entries(userVars)) {
+          const re = new RegExp('\\b' + k + '\\b', 'g');
+          processed = processed.replace(re, '(' + v + ')');
+        }
+        result = nerdamer.expand(processed);
+        displayExpr = 'expand(' + inner + ')';
+      } else {
+        // Regular expression - substitute vars then simplify
+        let processed = calcExpr;
+        for (const [k, v] of Object.entries(userVars)) {
+          const re = new RegExp('\\b' + k + '\\b', 'g');
+          processed = processed.replace(re, '(' + v + ')');
+        }
+        result = nerdamer(processed);
+        displayExpr = calcExpr;
+      }
+
+      try {
+        resultLatex = result.toTeX();
+        resultText = result.text('fractions');
+      } catch {
+        resultLatex = String(result);
+        resultText = String(result);
+      }
+
+      resultDiv.innerHTML = `<div class="result-card success">
+        <div class="result-title"><span class="icon-ok">&#10004;</span>计算结果</div>
+        <div class="result-label">原式: <code>${escHtml(displayExpr)}</code></div>
+        <div class="result-label" style="margin-top:8px">=</div>
+        <div class="result-box"><div class="katex-sol" data-latex="${escHtml(resultLatex)}"></div></div>
+      </div>`;
+
+      resultDiv.querySelectorAll('.katex-sol').forEach(el => {
+        renderKatex(el.getAttribute('data-latex'), el);
+      });
+
+      addHistory('calc', expr, resultText);
+    } catch (err) {
+      resultDiv.innerHTML = `<div class="result-card error">
+        <div class="result-title"><span class="icon-err">&#9888;</span>计算失败</div>
+        <div class="error-box">${escHtml(String(err))}</div>
+      </div>`;
+      addHistory('calc', expr, '失败');
+    }
+    setLoading('calc-btn', false);
+  }, 50);
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    const solveTab = document.getElementById('tab-solve');
+    if (solveTab.classList.contains('active')) {
+      doSolve();
+    } else {
+      doCalc();
+    }
+  }
+});
+</script>
+
+</body>
+</html>
