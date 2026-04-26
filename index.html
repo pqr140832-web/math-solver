@@ -496,6 +496,74 @@ function renderKatex(latex, el) {
   }
 }
 
+// Custom quadratic solver for complex roots (nerdamer gets complex roots wrong)
+// Returns array of LaTeX strings if the equation is a numerical quadratic with D < 0, else null
+function trySolveQuadraticComplex(fullExpr) {
+  if (!/x\s*\^\s*2/.test(fullExpr)) return null;
+
+  // Evaluate polynomial at 3 points to find a, b, c
+  function evalAt(val) {
+    let e = fullExpr.replace(/\bx\b/g, '(' + val + ')');
+    try { return parseFloat(nerdamer(e).text()); } catch { return NaN; }
+  }
+  let f0 = evalAt(0), f1 = evalAt(1), fm1 = evalAt(-1);
+  let a = (f1 + fm1 - 2*f0) / 2;
+  let b = f1 - a - f0;
+  let c = f0;
+  a = Math.round(a * 1e9) / 1e9;
+  b = Math.round(b * 1e9) / 1e9;
+  c = Math.round(c * 1e9) / 1e9;
+
+  if (isNaN(a) || isNaN(b) || isNaN(c) || Math.abs(a) < 1e-12) return null;
+
+  let D = Math.round((b*b - 4*a*c) * 1e9) / 1e9;
+  if (D >= 0) return null; // Only handle complex case; nerdamer handles real fine
+
+  let negD = Math.round(-D);
+  if (negD <= 0) return null;
+
+  // Simplify sqrt(negD): find largest perfect square factor
+  let sqrtOuter = 1, sqrtInner = negD;
+  for (let i = Math.floor(Math.sqrt(negD)); i >= 2; i--) {
+    if (negD % (i*i) === 0) { sqrtOuter = i; sqrtInner = negD / (i*i); break; }
+  }
+
+  // x = (-b ± i·sqrtOuter·sqrtInner) / (2a)
+  let negB = Math.round(-b * 1e9) / 1e9;
+  let twoA = Math.round(2 * a * 1e9) / 1e9;
+  if (twoA < 0) { negB = -negB; twoA = -twoA; } // ensure positive denominator
+
+  // Convert negB and twoA to simple fractions
+  let nbFrac = rationalApprox(negB, 10000);
+  let taFrac = rationalApprox(twoA, 10000);
+  // Real numerator = negB/twoA = (nbFrac[0]/nbFrac[1]) / (taFrac[0]/taFrac[1]) = nbFrac[0]*taFrac[1] / (nbFrac[1]*taFrac[0])
+  let realNum = nbFrac[0] * taFrac[1];
+  let commonDen = nbFrac[1] * taFrac[0];
+
+  // GCD to simplify
+  function gcd(x, y) { x = Math.abs(Math.round(x)); y = Math.abs(Math.round(y)); if(y===0) return x; while(y){[x,y]=[y,x%y];} return x; }
+  let g = gcd(gcd(Math.abs(realNum), sqrtOuter), commonDen);
+  if (g > 1) { realNum /= g; sqrtOuter /= g; commonDen /= g; }
+
+  // Build LaTeX for sqrt part
+  let sqrtLatex;
+  if (sqrtInner === 1 && sqrtOuter === 1) sqrtLatex = '';
+  else if (sqrtInner === 1) sqrtLatex = sqrtOuter; // pure number: 2, 3, etc.
+  else if (sqrtOuter === 1) sqrtLatex = '\\sqrt{' + sqrtInner + '}';
+  else sqrtLatex = sqrtOuter + '\\sqrt{' + sqrtInner + '}';
+
+  let sol1, sol2;
+  let iPart = sqrtLatex ? (sqrtInner === 1 ? sqrtLatex + 'i' : 'i' + sqrtLatex) : 'i';
+  if (commonDen === 1) {
+    if (realNum === 0) { sol1 = iPart; sol2 = '-' + iPart; }
+    else { sol1 = realNum + '+' + iPart; sol2 = realNum + '-' + iPart; }
+  } else {
+    sol1 = '\\frac{' + realNum + '+' + iPart + '}{' + commonDen + '}';
+    sol2 = '\\frac{' + realNum + '-' + iPart + '}{' + commonDen + '}';
+  }
+  return [sol1, sol2];
+}
+
 // Convert a decimal value to a nice π fraction string (e.g. "π/6", "5π/6")
 function decimalToPiFraction(val) {
   // Try common fractions of π
@@ -723,6 +791,27 @@ function doSolve() {
       // Use nerdamer to solve
       let solutions;
       try {
+        // For numerical quadratic equations with complex roots, nerdamer gives WRONG answers.
+        // Use our custom solver instead.
+        let customComplex = trySolveQuadraticComplex(exprWithValues);
+        if (customComplex) {
+          const subscripts = ['₁','₂','₃','₄','₅','₆','₇','₈','₉','₁₀'];
+          const solHtml = customComplex.map((latex, i) => {
+            return '<div class="katex-sol" data-latex="' + escHtml(solveFor + '_{' + (i+1) + '} = ' + latex) + '"></div>';
+          }).join('');
+          resultDiv.innerHTML = `<div class="result-card success">
+            <div class="result-title"><span class="icon-ok">&#10004;</span>求解结果</div>
+            <div class="result-label">方程: <code>${escHtml(expr)}</code></div>
+            <div class="result-box">${solHtml}</div>
+          </div>`;
+          resultDiv.querySelectorAll('.katex-sol').forEach(el => {
+            renderKatex(el.getAttribute('data-latex'), el);
+          });
+          addHistory('solve', expr, customComplex.join(', '));
+          setLoading('solve-btn', false);
+          return;
+        }
+
         solutions = nerdamer.solve(exprWithValues, solveFor);
         // nerdamer returns text like "[sol1,sol2]" — strip brackets and split smartly
         let solText = solutions.text();
