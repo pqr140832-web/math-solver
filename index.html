@@ -325,12 +325,44 @@ function nerdamerToLatex(expr) {
     let latex = nerdamer(expr).toTeX();
     // Remove multiplication dots for cleaner display (e.g. 2a instead of 2·a)
     latex = latex.replace(/\\cdot /g, '');
+    // Fix order inside sqrt: -4ac+b^2 -> b^2-4ac
+    latex = fixSqrtTermOrder(latex);
     // Fix quadratic formula order to standard: -b ± sqrt(b²-4ac) / 2a
     latex = fixQuadraticOrder(latex);
     return latex;
   } catch {
     return String(expr);
   }
+}
+
+// Fix terms inside \sqrt{} so positive terms come first: -4ac+b^2 -> b^2-4ac
+function fixSqrtTermOrder(latex) {
+  return latex.replace(/\\sqrt\{([^{}]+)\}/g, function(match, inner) {
+    // Only fix if it starts with a minus sign
+    if (!/^-/.test(inner.trim())) return match;
+    // Split into terms (respecting nested braces like {x}^2)
+    let terms = [];
+    let current = '';
+    let depth = 0;
+    for (let i = 0; i < inner.length; i++) {
+      let ch = inner[i];
+      if (ch === '{') depth++;
+      if (ch === '}') depth--;
+      if (depth === 0 && (ch === '+' || ch === '-')) {
+        if (current.length > 0) terms.push(current);
+        current = ch;
+      } else {
+        current += ch;
+      }
+    }
+    if (current.length > 0) terms.push(current);
+    // Separate positive and negative terms
+    let positive = terms.filter(t => !t.startsWith('-'));
+    let negative = terms.filter(t => t.startsWith('-'));
+    // Reorder: positive first, then negative
+    let reordered = [...positive, ...negative].join('');
+    return '\\sqrt{' + reordered + '}';
+  });
 }
 
 // Fix nerdamer's quadratic formula output to standard math textbook order
