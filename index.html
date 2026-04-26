@@ -322,7 +322,10 @@ function parseVars(str) {
 
 function nerdamerToLatex(expr) {
   try {
-    return nerdamer(expr).toTeX();
+    let latex = nerdamer(expr).toTeX();
+    // Remove multiplication dots for cleaner display (e.g. 2a instead of 2·a)
+    latex = latex.replace(/\\cdot /g, '');
+    return latex;
   } catch {
     return String(expr);
   }
@@ -602,6 +605,8 @@ function doCalc() {
 
       try {
         resultLatex = result.toTeX();
+        // Remove multiplication dots for cleaner display
+        resultLatex = resultLatex.replace(/\\cdot /g, '');
         resultText = result.text('fractions');
       } catch {
         resultLatex = String(result);
