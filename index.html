@@ -612,8 +612,10 @@ function doSolve() {
               let val;
               try { val = parseFloat(s); } catch { val = NaN; }
               if (isNaN(val)) { principal.push(s); continue; }
-              // Normalize to [0, 2π)
-              let norm = ((val % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+              // Normalize to [-π, π)
+              let norm = val % (2*Math.PI);
+              if (norm > Math.PI) norm -= 2*Math.PI;
+              if (norm <= -Math.PI) norm += 2*Math.PI;
               const key = Math.round(norm * 10000) / 10000;
               if (!seen.has(key)) {
                 seen.add(key);
