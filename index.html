@@ -584,18 +584,19 @@ function doSolve() {
               let val;
               try { val = parseFloat(s); } catch { val = NaN; }
               if (isNaN(val)) { principal.push(s); continue; }
+              // Normalize to [0, 2π)
               let norm = ((val % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
               const key = Math.round(norm * 10000) / 10000;
               if (!seen.has(key)) {
                 seen.add(key);
-                principal.push(s);
+                principal.push(norm); // Store normalized value
               }
             }
-            principal.sort((a, b) => parseFloat(a) - parseFloat(b));
+            principal.sort((a, b) => a - b);
             displaySols = principal.slice(0, 6);
             if (cleanedSols.length > displaySols.length) {
               const piExprs = displaySols.map(s => {
-                try { return decimalToPiFraction(parseFloat(s)); } catch { return s; }
+                try { return decimalToPiFraction(s); } catch { return s; }
               });
               trigNote = `<p style="font-size:11px;color:#6b7280;margin-top:8px">` +
                 `三角方程有周期性解，以上为主值区间 [0, 2π) 内的解。` +
@@ -639,7 +640,7 @@ function doSolve() {
 
           const solTexts = displaySols.map(s => {
             if (isTrig) {
-              try { return decimalToPiFraction(parseFloat(s)); } catch { return s; }
+              try { return decimalToPiFraction(s); } catch { return s; }
             }
             try { return nerdamer(s).text('fractions'); } catch { return s; }
           });
