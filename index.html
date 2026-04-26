@@ -375,7 +375,10 @@ function fixSqrtTermOrder(latex) {
       let positive = terms.filter(t => !t.startsWith('-'));
       let negative = terms.filter(t => t.startsWith('-'));
       if (positive.length > 0 && negative.length > 0) {
-        let reordered = [...positive, ...negative].join('');
+        // Strip leading + from first positive term (it was part of the split)
+        let reordered = [...positive, ...negative];
+        if (reordered[0].startsWith('+')) reordered[0] = reordered[0].substring(1);
+        reordered = reordered.join('');
         result = result.substring(0, sqrtPos) + '\\sqrt{' + reordered + '}' + result.substring(pos);
       }
     }
@@ -446,7 +449,8 @@ function fixQuadraticOrder(latex) {
   if (bTerm.startsWith('-')) bSign = '-';
   
   // Build standard form: -b ± sqrt(...)
-  let plusSign = (sqrtIsNeg && bSign === '-') || (sqrtIsPos && bSign === '-') ? '-' : '+';
+  // The sign between -b and sqrt is opposite to sqrt's sign in original
+  let plusSign = sqrtIsNeg ? '-' : '+';
   let newNum = '-b' + plusSign + sqrtPart;
   result = '\\frac{' + newNum + '}{' + denominator + '}' + afterFrac;
   
